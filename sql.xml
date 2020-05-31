@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd" >
+
+<sqlMap namespace="DAILY_CHECK">
+
+    <select id="getBillSta1" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT SUBSTR(t.input_file, 16, 3) as reserver1,
+        COUNT(t.log_id) AS
+        'up_files',
+        SUM(IFNULL(t.output_bill_count, 0)) AS 'right_records'
+        FROM
+        $historylog$ t
+        WHERE t.sharding_id=#sharding_id#
+        and t.module_id = 1
+        AND
+        t.log_type = 3
+        <![CDATA[AND t.input_file <> '']]>
+        GROUP BY SUBSTR(t.input_file, 16, 3)
+        ORDER BY SUBSTR(t.input_file, 16,
+        3);
+    </select>
+
+    <select id="getBillSta2" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        PROV_NAME AS 'visit_prov',
+        PROV_ID as 'reserver1',
+        SUM(IFNULL(t.output_errcdr_count, 0)) AS 'err_records'
+        FROM
+        $historylog$ t
+        RIGHT JOIN
+        (SELECT
+        *
+        FROM
+        tp_province
+        WHERE prov_id NOT IN
+        (1, 199)) a
+        ON SUBSTR(input_file, 16, 3) = a.prov_id
+        where
+        t.sharding_id=#sharding_id#
+        AND t.module_id = 1
+        AND t.log_type = 3
+        AND
+        t.output_file LIKE 'E%'
+        GROUP BY reserver1
+        ORDER BY reserver1;
+    </select>
+
+    <select id="getBillSta3" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        a.prov_name as 'visit_prov',
+        COUNT(t.log_id) AS 'reject_files'
+        FROM
+        $historylog$ t
+        RIGHT JOIN
+        (SELECT
+        *
+        FROM
+        tp_province
+        WHERE prov_id NOT
+        IN (1, 199)) a
+        ON SUBSTR(input_file, 16, 3) = a.prov_id
+        WHERE
+        t.sharding_id=#sharding_id#
+        and t.module_id = 1
+        AND t.log_type = 3
+        AND
+        t.output_file LIKE 'F%'
+        GROUP BY visit_prov
+        ORDER BY visit_prov;
+    </select>
+
+    <select id="getBillSta4" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        SUBSTR(t.output_file, 16, 3) as reserver1,
+        B.prov_name as
+        'visit_prov',
+        COUNT(DISTINCT t.output_file) AS 'down_files',
+        SUM(t.output_bill_count) AS 'down_records'
+        FROM
+        $historylog$ t,
+        tp_province A,
+        tp_province B
+        WHERE t.sharding_id=#sharding_id#
+        and
+        t.module_id = 2
+        AND t.log_type = 3
+        AND SUBSTR(input_file, 16, 3) =
+        A.prov_id
+        AND SUBSTR(output_file, 16, 3) = B.prov_id
+        GROUP BY reserver1
+        ORDER BY reserver1;
+    </select>
+
+    <select id="getBillSta5" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        a.PROV_NAME AS 'visit_prov',
+        COUNT(1) AS
+        'LNDG_err_records'
+        FROM
+        $rejecthistory$ t,
+        tp_province a
+        WHERE
+        t.sharding_id=#old_sharding_id#
+        and SUBSTR(t.file_name, 17, 3) = a.prov_id
+        AND t.item_type = 'LNDG'
+        GROUP BY
+        visit_prov;
+    </select>
+
+    <select id="getBillSta6" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        reserver1,
+        up_files as reserver3,
+        all_records as
+        reserver4
+        FROM
+        monitor_bill_statistics
+        WHERE created_time = #oldtime#
+        AND
+        reserver2 = #reserver2#
+        ORDER BY reserver1
+    </select>
+
+    <select id="getErrTop1" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        err_code,
+        COUNT(1) AS err_records,
+        GROUP_CONCAT(
+        DISTINCT
+        SELECT PROV_NAME FROM tp_province
+        WHERE prov_id =
+        SUBSTR(file_name,17, 3)
+        ) as
+        prov_name
+        FROM $rejecthistory$
+        WHERE
+        item_type = 'LNIG'
+        AND file_name
+        LIKE #format#
+        GROUP BY err_code
+        ORDER BY
+        err_records DESC limit 3;
+    </select>
+
+    <select id="getErrTop2" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        err_code,
+        COUNT(1) AS err_records,
+        GROUP_CONCAT
+        (
+        DISTINCT
+        SELECT PROV_NAME FROM tp_province
+        WHERE SUBSTR(file_name,17,
+        3)=prov_id
+        )AS prov_name
+        FROM
+        $rejecthistory$
+        WHERE item_type = 'LNDG'
+        AND
+        file_name LIKE #format#
+        GROUP BY err_code ORDER BY err_records DESC limit 3
+    </select>
+
+    <insert id="billStaToMysql" parameterClass="java.util.List">
+        insert into
+        monitor_bill_statistics(id,visit_prov,up_files,all_records,err_records,reject_files,right_records,down_files,down_records,LNDG_err_records,created_time,reserver1,reserver2,reserver3,reserver4,reserver5,reserver6)
+        values
+        <iterate conjunction=",">
+            (#[].id#,#[].visit_prov#,#[].up_files#,#[].all_records#,#[].err_records#,#[].reject_files#,#[].right_records#,#[].down_files#,#[].down_records#,#[].LNDG_err_records#,#[].created_time#,#[].reserver1#,#[].reserver2#,#[].reserver3#,#[].reserver4#,#[].reserver5#,#[].reserver6#)
+        </iterate>
+    </insert>
+
+    <insert id="errTopToMysql" parameterClass="java.util.List">
+        insert into
+        monitor_error_top(id,item_type,err_code,err_records,prov_name,created_time)
+        values
+        <iterate conjunction=",">
+            (#[].id#,#[].item_type#,#[].err_code#,#[].err_records#,#[].prov_name#,#[].created_time#)
+        </iterate>
+    </insert>
+
+    <delete id="deleteBillStaBycTime" parameterClass="java.util.HashMap">
+        DELETE FROM
+        monitor_bill_statistics WHERE created_time = #create_time#
+    </delete>
+
+    <delete id="deleteOldBillStaBycTime" parameterClass="java.util.HashMap">
+        DELETE FROM
+        <![CDATA[monitor_bill_statistics WHERE created_time < #create_time#]]>
+    </delete>
+
+    <!-- 全网平均速率 -->
+    <select id="getPerforSta1" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        avg(
+        E.output_bill_count / E.all_flow_t
+        ) as
+        avg_speed,
+        '全网' as visit_prov
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time)
+        input_time,
+        FROM_UNIXTIME(D.output_time) output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        and module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E;
+    </select>
+
+    <!-- 全网平均耗时 -->
+    <select id="getPerforSta2" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        AVG(E.all_flow_t) AS avg_time,
+        '全网' as visit_prov
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time) input_time,
+        FROM_UNIXTIME(D.output_time)
+        output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        AND module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1
+        ) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1
+        ) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E;
+    </select>
+
+    <!-- 分省处理平均速率 -->
+    <select id="getPerforSta3" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        E.prov as reserver1,
+        AVG(
+        E.output_bill_count /
+        E.all_flow_t
+        ) AS avg_speed
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time)
+        input_time,
+        FROM_UNIXTIME(D.output_time) output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        AND module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E
+        GROUP BY prov
+        ORDER BY prov;
+    </select>
+
+    <!-- 分省处理平均耗时 -->
+    <select id="getPerforSta4" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        E.prov as reserver1,
+        AVG(E.all_flow_t) AS avg_time
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time) input_time,
+        FROM_UNIXTIME(D.output_time)
+        output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        AND module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E
+        GROUP BY prov
+        ORDER BY prov;
+    </select>
+
+    <!-- 全网耗时百分比 -->
+    <select id="getPerforSta5" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        SUM(
+        CASE
+        WHEN all_flow_t <![CDATA[<]]>
+        60
+        THEN 1
+        ELSE 0
+        END
+        ) AS time1_records,
+        SUM(
+        CASE
+        WHEN all_flow_t <![CDATA[>=]]>
+        60
+        AND all_flow_t <![CDATA[<]]>
+        120
+        THEN 1
+        ELSE 0
+        END
+        ) AS time2_records,
+        SUM(
+        CASE
+        WHEN all_flow_t <![CDATA[>=]]>
+        120
+        THEN 1
+        ELSE 0
+        END
+        ) AS time3_records,
+        '全网' as visit_prov
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time)
+        input_time,
+        FROM_UNIXTIME(D.output_time) output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        AND module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E;
+    </select>
+
+    <!-- 各省耗时百分比 -->
+    <select id="getPerforSta6" resultClass="java.util.HashMap"
+            parameterClass="java.util.HashMap">
+        SELECT
+        prov as reserver1,
+        sum(
+        case
+        when all_flow_t <![CDATA[<]]>
+        60
+        then 1
+        else 0
+        end
+        ) as time1_records,
+        sum(
+        case
+        when all_flow_t <![CDATA[>=]]>
+        60
+        and all_flow_t <![CDATA[<]]>
+        120
+        then 1
+        else 0
+        end
+        ) as time2_records,
+        sum(
+        case
+        when all_flow_t <![CDATA[>=]]>
+        120
+        then 1
+        else 0
+        end
+        ) as time3_records
+        FROM
+        (SELECT
+        D.input_file,
+        D.output_bill_count,
+        D.output_errcdr_count,
+        D.prov,
+        FROM_UNIXTIME(D.create_time) create_time,
+        FROM_UNIXTIME(D.input_time)
+        input_time,
+        FROM_UNIXTIME(D.output_time) output_time,
+        FROM_UNIXTIME(C.dis_min_time) dis_min_time,
+        FROM_UNIXTIME(C.dis_max_time) dis_max_time,
+        (C.dis_max_time -
+        D.create_time) all_flow_t,
+        (C.dis_max_time - C.dis_min_time) dispat_t,
+        (D.output_time - D.create_time) distri_t,
+        (D.input_time -
+        D.create_time) find_t
+        FROM
+        (SELECT
+        MAX(Handleendtime) dis_max_time,
+        MIN(Handlestattime) dis_min_time,
+        input_file
+        FROM
+        $historylog$
+        WHERE
+        sharding_id = #sharding_id#
+        AND module_id = 2
+        GROUP BY input_file) C
+        INNER JOIN
+        (SELECT
+        A.input_file input_file,
+        A.create_time create_time,
+        B.Handlestattime input_time,
+        B.Handleendtime output_time,
+        B.output_bill_count,
+        B.output_errcdr_count,
+        B.prov
+        FROM
+        (SELECT
+        input_file,
+        create_time,
+        Handlestattime
+        FROM
+        $historylog$
+        WHERE sharding_id
+        = #sharding_id#
+        AND log_type = 1
+        AND module_id = 1) A
+        INNER JOIN
+        (SELECT
+        input_file,
+        Handlestattime,
+        Handleendtime,
+        output_bill_count,
+        output_errcdr_count,
+        SUBSTRING(input_file, 16, 3) prov
+        FROM
+        $historylog$
+        WHERE sharding_id = #sharding_id#
+        AND log_type = 3
+        AND module_id = 1) B
+        ON A.input_file = B.input_file) D
+        ON C.input_file = D.input_file) E
+        group by prov
+        order by prov;
+    </select>
+
+    <insert id="perForStaToMysql" parameterClass="java.util.List">
+        insert into
+        monitor_performance_statistics(id,visit_prov,avg_speed,avg_time,time1_records,time2_records,time3_records,created_time,reserver1)
+        values
+        <iterate conjunction=",">
+            (#[].id#,#[].visit_prov#,#[].avg_speed#,#[].avg_time#,#[].time1_records#,#[].time2_records#,#[].time3_records#,#[].created_time#,#[].reserver1#)
+        </iterate>
+    </insert>
+
+    <delete id="deletePerForStaBycTime" parameterClass="java.util.HashMap">
+        DELETE FROM
+        monitor_performance_statistics WHERE created_time = #create_time#
+    </delete>
+
+    <delete id="deleteOldPerForStaBycTime" parameterClass="java.util.HashMap">
+        DELETE FROM
+        <![CDATA[monitor_performance_statistics WHERE created_time < #create_time#]]>
+    </delete>
+
+    <delete id="deleteErrTopBycTime" parameterClass="java.util.HashMap">
+        DELETE FROM
+        monitor_error_top WHERE created_time = #create_time#
+    </delete>
+
+</sqlMap>
